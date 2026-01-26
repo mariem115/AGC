@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import '../config/constants.dart';
 import '../models/media_item.dart';
@@ -13,6 +14,7 @@ class MediaService {
   final ApiService _api = ApiService();
   
   /// Upload an image to the server
+  /// All fields are converted to strings explicitly to avoid serialization issues
   Future<UploadResult> uploadImage({
     required File file,
     required int referenceId,
@@ -23,16 +25,29 @@ class MediaService {
     try {
       final fileBytes = await file.readAsBytes();
       
+      // Build clean payload with explicit string conversion
+      // This ensures only primitive String values are sent to avoid _Namespace errors
+      final fields = <String, String>{
+        'referenceId': referenceId.toString(),
+        'referenceType': referenceType.toString(),
+        'mediaType': mediaType.toString(),
+        'imageName': imageName,
+        'length': fileBytes.length.toString(),
+      };
+      
+      // DEBUG: Log payload before sending to help diagnose serialization issues
+      debugPrint('=== UPLOAD PAYLOAD ===');
+      debugPrint('referenceId: ${fields['referenceId']} (${fields['referenceId'].runtimeType})');
+      debugPrint('referenceType: ${fields['referenceType']} (${fields['referenceType'].runtimeType})');
+      debugPrint('mediaType: ${fields['mediaType']} (${fields['mediaType'].runtimeType})');
+      debugPrint('imageName: ${fields['imageName']} (${fields['imageName'].runtimeType})');
+      debugPrint('length: ${fields['length']} (${fields['length'].runtimeType})');
+      debugPrint('======================');
+      
       final response = await _api.uploadFile(
         action: AppConstants.actionUploadImage,
         file: file,
-        fields: {
-          'referenceId': referenceId.toString(),
-          'referenceType': referenceType.toString(),
-          'mediaType': mediaType.toString(),
-          'imageName': imageName,
-          'length': fileBytes.length.toString(),
-        },
+        fields: fields,
       );
       
       if (!response.isSuccess) {

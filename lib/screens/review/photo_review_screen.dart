@@ -282,27 +282,58 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
     final draftProvider = context.read<DraftProvider>();
     final mediaService = MediaService();
     
+    // Validate required fields before proceeding
+    // This prevents _Namespace errors by ensuring we have valid primitive data
+    if (draft.referenceId == null || draft.referenceType == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Référence invalide - veuillez réessayer'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        );
+      }
+      return;
+    }
+    
+    // DEBUG: Log draft data to help diagnose serialization issues
+    debugPrint('=== SAVE FINAL DEBUG ===');
+    debugPrint('referenceId: ${draft.referenceId} (${draft.referenceId.runtimeType})');
+    debugPrint('referenceType: ${draft.referenceType} (${draft.referenceType.runtimeType})');
+    debugPrint('qualityStatus: ${draft.qualityStatus} (${draft.qualityStatus.runtimeType})');
+    debugPrint('referenceName: ${draft.referenceName} (${draft.referenceName.runtimeType})');
+    debugPrint('description: ${draft.description} (${draft.description.runtimeType})');
+    debugPrint('========================');
+    
     try {
       String savedPath = draft.filePath;
       
-      // === Step 1: Upload to server (if reference is selected) ===
-      // Note: Validation in modal ensures referenceId is not null for final save
-      if (draft.referenceId != null && draft.referenceType != null) {
+      // === Step 1: Upload to server (mobile only - web doesn't support dart:io File) ===
+      // On web, files are blob URLs that can't be accessed via dart:io
+      // This prevents "Unsupported operation: _Namespace" error on web platform
+      if (!kIsWeb) {
         final file = File(draft.filePath);
         if (await file.exists()) {
           // Prepare file name for upload
           final ext = _getFileExtension(draft.filePath);
           final imageName = 'AGC_${DateTime.now().millisecondsSinceEpoch}$ext';
           
+          // Extract primitive values explicitly to avoid serialization issues
+          final int refId = draft.referenceId!;
+          final int refType = draft.referenceType!;
+          final int quality = draft.qualityStatus;
+          
           // Upload to server with:
-          // - referenceId: selected reference ID
+          // - referenceId: selected reference ID (int)
           // - referenceType: selected reference type (1=Component, 2=Semi-final, 3=Final)
           // - mediaType: quality status (4=Bonne/OK, 5=Mauvaise/NOK, 6=Neutre/Neutral)
           final uploadResult = await mediaService.uploadImage(
             file: file,
-            referenceId: draft.referenceId!,
-            referenceType: draft.referenceType!,
-            mediaType: draft.qualityStatus,
+            referenceId: refId,
+            referenceType: refType,
+            mediaType: quality,
             imageName: imageName,
           );
           

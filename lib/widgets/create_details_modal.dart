@@ -205,13 +205,20 @@ class _CreateDetailsModalState extends State<CreateDetailsModal> {
 
   DraftItem _buildDraftItem() {
     final now = DateTime.now();
+    
+    // Extract primitive values explicitly to avoid serialization issues
+    // This prevents _Namespace errors by ensuring only int/String values are used
+    final int? refId = _selectedReference?.id;
+    final String? refName = _selectedReference?.name;
+    final int? refType = _selectedReference?.referenceType;
+    
     return DraftItem(
       id: widget.existingDraft?.id,
       filePath: widget.imagePath,
       isVideo: widget.isVideo,
-      referenceId: _selectedReference?.id,
-      referenceName: _selectedReference?.name,
-      referenceType: _selectedReference?.referenceType,
+      referenceId: refId,
+      referenceName: refName,
+      referenceType: refType,
       description: _descriptionController.text.trim().isEmpty
           ? null
           : _descriptionController.text.trim(),

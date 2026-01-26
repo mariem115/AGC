@@ -46,6 +46,7 @@ class DraftItem {
   }
 
   /// Convert to database map (SQLite format with int booleans)
+  /// Ensures only primitive values are stored to avoid serialization errors
   Map<String, dynamic> toMap() {
     return {
       if (id != null) 'id': id,
@@ -54,7 +55,7 @@ class DraftItem {
       'reference_id': referenceId,
       'reference_name': referenceName,
       'reference_type': referenceType,
-      'description': description,
+      'description': description ?? '',  // Never send null to avoid _Namespace errors
       'quality_status': qualityStatus,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
@@ -63,15 +64,17 @@ class DraftItem {
   }
 
   /// Convert to JSON map (for web storage)
+  /// Ensures only primitive values (int, String, bool) are serialized
+  /// to avoid "Unsupported operation: _Namespace" errors during jsonEncode
   Map<String, dynamic> toJson() {
     return {
       'id': id,
       'file_path': filePath,
       'is_video': isVideo,
       'reference_id': referenceId,
-      'reference_name': referenceName,
+      'reference_name': referenceName ?? '',  // Never send null
       'reference_type': referenceType,
-      'description': description,
+      'description': description ?? '',  // Never send null
       'quality_status': qualityStatus,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
