@@ -1,0 +1,635 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
+import '../../config/routes.dart';
+import '../../config/theme.dart';
+import '../../models/draft_item.dart';
+import '../../providers/draft_provider.dart';
+import '../../providers/media_provider.dart';
+
+/// Brouillon (Drafts) list screen
+class BrouillonScreen extends StatefulWidget {
+  const BrouillonScreen({super.key});
+
+  @override
+  State<BrouillonScreen> createState() => _BrouillonScreenState();
+}
+
+class _BrouillonScreenState extends State<BrouillonScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<DraftProvider>().loadDrafts();
+    });
+  }
+
+  void _editDraft(DraftItem draft) {
+    final draftProvider = context.read<DraftProvider>();
+    Navigator.pushNamed(
+      context,
+      AppRoutes.photoReview,
+      arguments: {
+        'imagePath': draft.filePath,
+        'isVideo': draft.isVideo,
+        'draftId': draft.id,
+      },
+    ).then((_) {
+      // Reload drafts when returning
+      if (mounted) {
+        draftProvider.loadDrafts();
+      }
+    });
+  }
+
+  void _showDeleteDialog(DraftItem draft) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.delete_outline_rounded, color: AppColors.error),
+            SizedBox(width: 12),
+            Text(
+              'Supprimer',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Voulez-vous vraiment supprimer ce brouillon ?',
+          style: TextStyle(fontFamily: 'Poppins'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _deleteDraft(draft);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+            ),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteDraft(DraftItem draft) async {
+    final success = await context.read<DraftProvider>().deleteDraft(draft);
+    if (mounted && success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Brouillon supprimé'),
+          backgroundColor: AppColors.success,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
+    }
+  }
+
+  Future<void> _finalizeDraft(DraftItem draft) async {
+    // Check if reference is selected
+    if (draft.referenceId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Veuillez d\'abord sélectionner une référence'),
+          backgroundColor: AppColors.warning,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
+      _editDraft(draft);
+      return;
+    }
+
+    // Capture providers before async operations
+    final mediaProvider = context.read<MediaProvider>();
+    final draftProvider = context.read<DraftProvider>();
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text(
+                  'Téléchargement en cours...',
+                  style: TextStyle(fontFamily: 'Poppins'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      // Upload the image
+      final file = File(draft.filePath);
+      
+      final success = await mediaProvider.uploadImage(
+        file: file,
+        referenceId: draft.referenceId!,
+        referenceType: draft.referenceType ?? 0,
+        mediaType: draft.qualityStatus,
+        imageName: '${draft.referenceName ?? 'Media'}_${DateTime.now().millisecondsSinceEpoch}.${draft.isVideo ? 'mp4' : 'png'}',
+      );
+
+      if (mounted) {
+        navigator.pop(); // Close loading dialog
+      }
+
+      if (success) {
+        // Mark as finalized and remove from drafts
+        await draftProvider.finalizeDraft(draft);
+        
+        if (mounted) {
+          scaffoldMessenger.showSnackBar(
+            SnackBar(
+              content: const Text('Média téléchargé avec succès'),
+              backgroundColor: AppColors.success,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          scaffoldMessenger.showSnackBar(
+            SnackBar(
+              content: Text(mediaProvider.error ?? 'Erreur lors du téléchargement'),
+              backgroundColor: AppColors.error,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        navigator.pop(); // Close loading dialog
+        scaffoldMessenger.showSnackBar(
+          SnackBar(
+            content: Text('Erreur: $e'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'Brouillon',
+          style: TextStyle(
+            fontFamily: 'Poppins',
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: () => context.read<DraftProvider>().loadDrafts(),
+          ),
+        ],
+      ),
+      body: Consumer<DraftProvider>(
+        builder: (context, draftProvider, child) {
+          if (draftProvider.isLoading) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+
+          if (draftProvider.drafts.isEmpty) {
+            return _buildEmptyState();
+          }
+
+          return RefreshIndicator(
+            onRefresh: () => draftProvider.loadDrafts(),
+            child: ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: draftProvider.drafts.length,
+              itemBuilder: (context, index) {
+                final draft = draftProvider.drafts[index];
+                return _DraftListItem(
+                  draft: draft,
+                  onEdit: () => _editDraft(draft),
+                  onDelete: () => _showDeleteDialog(draft),
+                  onFinalize: () => _finalizeDraft(draft),
+                );
+              },
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 100,
+            height: 100,
+            decoration: BoxDecoration(
+              color: AppColors.statusNeutral.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Icon(
+              Icons.drafts_rounded,
+              size: 48,
+              color: AppColors.statusNeutral.withValues(alpha: 0.7),
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'Aucun brouillon',
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Les médias en attente apparaîtront ici',
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 14,
+              color: AppColors.textSecondary.withValues(alpha: 0.7),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DraftListItem extends StatelessWidget {
+  final DraftItem draft;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final VoidCallback onFinalize;
+
+  const _DraftListItem({
+    required this.draft,
+    required this.onEdit,
+    required this.onDelete,
+    required this.onFinalize,
+  });
+
+  Color _getQualityColor() {
+    switch (draft.qualityStatus) {
+      case 4:
+        return AppColors.statusOK;
+      case 5:
+        return AppColors.statusNOK;
+      case 6:
+        return AppColors.statusNeutral;
+      default:
+        return AppColors.statusNeutral;
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    return DateFormat('dd/MM/yyyy HH:mm', 'fr_FR').format(date);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // Main content
+          InkWell(
+            onTap: onEdit,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  // Thumbnail
+                  _buildThumbnail(),
+                  
+                  const SizedBox(width: 14),
+                  
+                  // Info
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Reference name
+                        Text(
+                          draft.referenceName ?? 'Sans référence',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: draft.referenceName != null
+                                ? AppColors.textPrimary
+                                : AppColors.textLight,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        
+                        const SizedBox(height: 4),
+                        
+                        // Description preview
+                        if (draft.description != null && draft.description!.isNotEmpty)
+                          Text(
+                            draft.description!,
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              fontSize: 12,
+                              color: AppColors.textSecondary.withValues(alpha: 0.8),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          )
+                        else
+                          Text(
+                            'Pas de description',
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              fontSize: 12,
+                              fontStyle: FontStyle.italic,
+                              color: AppColors.textLight.withValues(alpha: 0.6),
+                            ),
+                          ),
+                        
+                        const SizedBox(height: 8),
+                        
+                        // Quality badge and date
+                        Row(
+                          children: [
+                            // Quality badge
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _getQualityColor(),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                draft.qualityLabel,
+                                style: const TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                            
+                            const SizedBox(width: 8),
+                            
+                            // Video indicator
+                            if (draft.isVideo)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.accent.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.videocam_rounded,
+                                      size: 12,
+                                      color: AppColors.accent,
+                                    ),
+                                    SizedBox(width: 3),
+                                    Text(
+                                      'Vidéo',
+                                      style: TextStyle(
+                                        fontFamily: 'Poppins',
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w500,
+                                        color: AppColors.accent,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            
+                            const Spacer(),
+                            
+                            // Date
+                            Text(
+                              _formatDate(draft.updatedAt),
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontSize: 11,
+                                color: AppColors.textLight.withValues(alpha: 0.7),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  // Chevron
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: AppColors.textLight.withValues(alpha: 0.5),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          
+          // Divider
+          Divider(
+            height: 1,
+            color: AppColors.border.withValues(alpha: 0.5),
+          ),
+          
+          // Action buttons
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Row(
+              children: [
+                // Edit button
+                TextButton.icon(
+                  onPressed: onEdit,
+                  icon: const Icon(Icons.edit_rounded, size: 18),
+                  label: const Text('Modifier'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    textStyle: const TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                
+                // Delete button
+                TextButton.icon(
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                  label: const Text('Supprimer'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.error,
+                    textStyle: const TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                
+                const Spacer(),
+                
+                // Finalize button
+                TextButton.icon(
+                  onPressed: onFinalize,
+                  icon: const Icon(Icons.cloud_upload_rounded, size: 18),
+                  label: const Text('Finaliser'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.statusOK,
+                    textStyle: const TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildThumbnail() {
+    return Container(
+      width: 64,
+      height: 64,
+      decoration: BoxDecoration(
+        color: AppColors.surfaceVariant,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: draft.isVideo
+            ? Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Video thumbnail - show first frame or placeholder
+                  Container(
+                    color: AppColors.dark.withValues(alpha: 0.8),
+                    child: const Center(
+                      child: Icon(
+                        Icons.videocam_rounded,
+                        color: Colors.white54,
+                        size: 28,
+                      ),
+                    ),
+                  ),
+                  // Play icon overlay
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.9),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.play_arrow_rounded,
+                      color: AppColors.dark,
+                      size: 18,
+                    ),
+                  ),
+                ],
+              )
+            : kIsWeb
+                ? Image.network(
+                    draft.filePath,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Center(
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: AppColors.textLight,
+                          size: 24,
+                        ),
+                      );
+                    },
+                  )
+                : Image.file(
+                    File(draft.filePath),
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Center(
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: AppColors.textLight,
+                          size: 24,
+                        ),
+                      );
+                    },
+                  ),
+      ),
+    );
+  }
+}
