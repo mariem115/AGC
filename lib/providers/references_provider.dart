@@ -19,6 +19,12 @@ class ReferencesProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   
+  // PERFORMANCE: Cache flag to avoid redundant API calls
+  // Once references are fetched successfully, we reuse them instead of
+  // hitting the network every time the modal opens.
+  // This reduces: network requests, loading time, and battery usage.
+  bool _hasFetchedOnce = false;
+  
   String get searchQuery => _searchQuery;
   bool get showComponents => _showComponents;
   bool get showSemiFinal => _showSemiFinal;
@@ -27,6 +33,9 @@ class ReferencesProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
   
+  /// Check if references have been fetched and cached
+  bool get hasCachedReferences => _hasFetchedOnce && _fetchedReferences.isNotEmpty;
+  
   /// Get all references - prefer fetched, fallback to cached from login
   List<Reference> get allReferences => 
       _fetchedReferences.isNotEmpty ? _fetchedReferences : _authService.references;
@@ -34,9 +43,31 @@ class ReferencesProvider extends ChangeNotifier {
   /// Get the companyId from the logged-in user
   int? get companyId => _authService.currentUser?.companyId;
   
-  /// Fetch fresh references from API using companyId
-  /// Call this when opening the modal to get up-to-date data
+  /// PERFORMANCE: Fetch references only if not already cached
+  /// 
+  /// This method checks if we already have cached data before making an API call.
+  /// Opening the modal 10 times will only make 1 network request (the first time).
+  /// 
+  /// Use [refreshReferences] if you need to force a fresh fetch.
   Future<void> fetchReferences() async {
+    // PERFORMANCE: Skip API call if we already have cached data
+    // This is the key optimization - no network call if we have data
+    if (_hasFetchedOnce && _fetchedReferences.isNotEmpty) {
+      return; // Use cached data, no network call needed
+    }
+    
+    await _doFetchReferences();
+  }
+  
+  /// Force refresh references from API (ignores cache)
+  /// Use this when user explicitly requests fresh data (pull-to-refresh, etc.)
+  Future<void> refreshReferences() async {
+    _hasFetchedOnce = false; // Clear cache flag
+    await _doFetchReferences();
+  }
+  
+  /// Internal method that actually fetches from the API
+  Future<void> _doFetchReferences() async {
     final cid = companyId;
     if (cid == null) {
       _error = 'Utilisateur non connecté ou companyId manquant';
@@ -72,6 +103,9 @@ class ReferencesProvider extends ChangeNotifier {
               .map((r) => Reference.fromJson(r as Map<String, dynamic>))
               .toList();
         }
+        
+        // PERFORMANCE: Mark as successfully fetched so future calls use cache
+        _hasFetchedOnce = true;
       } else {
         _error = response.error ?? 'Erreur lors du chargement des références';
       }
@@ -81,6 +115,13 @@ class ReferencesProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
+  }
+  
+  /// Clear the cache (call this on logout or when data might be stale)
+  void clearCache() {
+    _hasFetchedOnce = false;
+    _fetchedReferences = [];
+    notifyListeners();
   }
   
   /// Get filtered references
