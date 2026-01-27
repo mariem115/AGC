@@ -18,6 +18,7 @@ class AppRoutes {
   static const String capture = '/capture';
   static const String edit = '/edit';
   static const String gallery = '/gallery';
+  static const String galleryImport = '/gallery-import'; // Import from device gallery
   static const String serverGallery = '/server-gallery';
   static const String settings = '/settings';
   static const String photoReview = '/photo-review';
@@ -54,6 +55,10 @@ class AppRouter {
       
       case AppRoutes.gallery:
         return _buildRoute(const GalleryScreen(), settings);
+      
+      case AppRoutes.galleryImport:
+        // Gallery import mode - opens file picker directly
+        return _buildRoute(const CaptureScreen(isGalleryMode: true), settings);
       
       case AppRoutes.serverGallery:
         final args = settings.arguments as Map<String, dynamic>;

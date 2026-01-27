@@ -22,16 +22,16 @@ class MediaProvider extends ChangeNotifier {
   List<MediaItem> get localImages => _localImages;
   List<String> get serverMediaIds => _serverMediaIds;
   
-  /// Load local images
+  /// Load local media (images and videos)
   Future<void> loadLocalImages() async {
     _isLoading = true;
     _error = null;
     notifyListeners();
     
     try {
-      _localImages = await _mediaService.getLocalImages();
+      _localImages = await _mediaService.getLocalMedia();
     } catch (e) {
-      _error = 'Erreur lors du chargement des images: $e';
+      _error = 'Erreur lors du chargement des médias: $e';
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -54,13 +54,14 @@ class MediaProvider extends ChangeNotifier {
     }
   }
   
-  /// Upload image
-  Future<bool> uploadImage({
+  /// Upload media (image or video)
+  Future<bool> uploadMedia({
     required File file,
     required int referenceId,
     required int referenceType,
     required int mediaType,
-    required String imageName,
+    required String fileName,
+    bool isVideo = false,
   }) async {
     _isUploading = true;
     _uploadProgress = 0;
@@ -68,12 +69,13 @@ class MediaProvider extends ChangeNotifier {
     notifyListeners();
     
     try {
-      final result = await _mediaService.uploadImage(
+      final result = await _mediaService.uploadMedia(
         file: file,
         referenceId: referenceId,
         referenceType: referenceType,
         mediaType: mediaType,
-        imageName: imageName,
+        fileName: fileName,
+        isVideo: isVideo,
       );
       
       if (!result.isSuccess) {
@@ -92,10 +94,28 @@ class MediaProvider extends ChangeNotifier {
     }
   }
   
-  /// Save image locally
-  Future<String?> saveImageLocally(File image, String name) async {
+  /// Legacy method for backward compatibility
+  Future<bool> uploadImage({
+    required File file,
+    required int referenceId,
+    required int referenceType,
+    required int mediaType,
+    required String imageName,
+  }) {
+    return uploadMedia(
+      file: file,
+      referenceId: referenceId,
+      referenceType: referenceType,
+      mediaType: mediaType,
+      fileName: imageName,
+      isVideo: false,
+    );
+  }
+  
+  /// Save media locally (image or video)
+  Future<String?> saveMediaLocally(File media, String name, {bool isVideo = false}) async {
     try {
-      final path = await _mediaService.saveImageLocally(image, name);
+      final path = await _mediaService.saveMediaLocally(media, name, isVideo: isVideo);
       if (path != null) {
         await loadLocalImages();
       }
@@ -105,6 +125,11 @@ class MediaProvider extends ChangeNotifier {
       notifyListeners();
       return null;
     }
+  }
+  
+  /// Legacy method for backward compatibility
+  Future<String?> saveImageLocally(File image, String name) {
+    return saveMediaLocally(image, name, isVideo: false);
   }
   
   /// Delete local image

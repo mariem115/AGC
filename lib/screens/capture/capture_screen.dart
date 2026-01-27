@@ -9,10 +9,16 @@ import '../../config/routes.dart';
 import '../../config/theme.dart';
 
 /// Camera capture screen for photos and videos
+/// Also supports gallery-only mode for importing from device gallery
 class CaptureScreen extends StatefulWidget {
   final bool isVideo;
+  final bool isGalleryMode; // Skip camera, open picker directly
   
-  const CaptureScreen({super.key, this.isVideo = false});
+  const CaptureScreen({
+    super.key, 
+    this.isVideo = false,
+    this.isGalleryMode = false,
+  });
 
   @override
   State<CaptureScreen> createState() => _CaptureScreenState();
@@ -36,13 +42,33 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
   String? _capturedFilePath;
   VideoPlayerController? _videoPlayerController;
   
+  // Video recording timer
+  DateTime? _recordingStartTime;
+  Duration _recordingDuration = Duration.zero;
+  
+  // Gallery mode: dynamically detected media type
+  // In camera mode, use widget.isVideo; in gallery mode, use this value
+  bool _detectedIsVideo = false;
+  
   final ImagePicker _imagePicker = ImagePicker();
+  
+  /// Returns true if current media is video (either from widget param or detected)
+  bool get _isVideoMedia => widget.isGalleryMode ? _detectedIsVideo : widget.isVideo;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _initializeCamera();
+    
+    if (widget.isGalleryMode) {
+      // Gallery mode: open picker directly after first frame
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _pickFromGalleryMixed();
+      });
+    } else {
+      // Camera mode: initialize camera
+      _initializeCamera();
+    }
   }
 
   @override
@@ -55,6 +81,8 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Skip camera lifecycle management in gallery mode
+    if (widget.isGalleryMode) return;
     if (_controller == null || !_controller!.value.isInitialized) return;
     
     if (state == AppLifecycleState.inactive) {
@@ -71,6 +99,8 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
     final cameraStatus = await Permission.camera.request();
     final micStatus = widget.isVideo ? await Permission.microphone.request() : PermissionStatus.granted;
     
+    if (!mounted) return; // Check if widget is still mounted after async operation
+    
     if (!cameraStatus.isGranted || (widget.isVideo && !micStatus.isGranted)) {
       setState(() {
         _hasPermission = false;
@@ -83,6 +113,8 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
     
     try {
       _cameras = await availableCameras();
+      if (!mounted) return; // Check again after async operation
+      
       if (_cameras.isEmpty) {
         setState(() => _errorMessage = 'Aucune caméra disponible');
         return;
@@ -90,7 +122,9 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
       
       await _setupCamera(_isFrontCamera ? 1 : 0);
     } catch (e) {
-      setState(() => _errorMessage = 'Erreur d\'initialisation: $e');
+      if (mounted) {
+        setState(() => _errorMessage = 'Erreur d\'initialisation: $e');
+      }
     }
   }
 
@@ -196,11 +230,20 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
     if (_isRecording) {
       try {
         final file = await _controller!.stopVideoRecording();
-        setState(() => _isRecording = false);
+        setState(() {
+          _isRecording = false;
+          _recordingStartTime = null;
+          _recordingDuration = Duration.zero;
+        });
         
         if (mounted) {
           // Initialize video player for preview
-          _videoPlayerController = VideoPlayerController.file(File(file.path));
+          // On web, use networkUrl since dart:io File is not supported
+          if (kIsWeb) {
+            _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(file.path));
+          } else {
+            _videoPlayerController = VideoPlayerController.file(File(file.path));
+          }
           await _videoPlayerController!.initialize();
           await _videoPlayerController!.setLooping(true);
           await _videoPlayerController!.play();
@@ -216,25 +259,56 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
     } else {
       try {
         await _controller!.startVideoRecording();
-        setState(() => _isRecording = true);
+        setState(() {
+          _isRecording = true;
+          _recordingStartTime = DateTime.now();
+        });
+        // Start timer updates
+        _startRecordingTimer();
       } catch (e) {
         _showError('Erreur: $e');
       }
     }
   }
+  
+  /// Update recording duration timer
+  void _startRecordingTimer() {
+    Future.doWhile(() async {
+      if (!_isRecording || !mounted) return false;
+      await Future.delayed(const Duration(seconds: 1));
+      if (_isRecording && mounted && _recordingStartTime != null) {
+        setState(() {
+          _recordingDuration = DateTime.now().difference(_recordingStartTime!);
+        });
+      }
+      return _isRecording && mounted;
+    });
+  }
+  
+  /// Format duration as MM:SS
+  String _formatDuration(Duration duration) {
+    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
 
   Future<void> _pickFromGallery() async {
     try {
       final XFile? file;
-      if (widget.isVideo) {
+      if (_isVideoMedia) {
         file = await _imagePicker.pickVideo(source: ImageSource.gallery);
       } else {
         file = await _imagePicker.pickImage(source: ImageSource.gallery);
       }
       
       if (file != null && mounted) {
-        if (widget.isVideo) {
-          _videoPlayerController = VideoPlayerController.file(File(file.path));
+        if (_isVideoMedia) {
+          // On web, use networkUrl since dart:io File is not supported
+          if (kIsWeb) {
+            _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(file.path));
+          } else {
+            _videoPlayerController = VideoPlayerController.file(File(file.path));
+          }
           await _videoPlayerController!.initialize();
           await _videoPlayerController!.setLooping(true);
           await _videoPlayerController!.play();
@@ -249,6 +323,127 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
       _showError('Erreur: $e');
     }
   }
+  
+  /// Pick media from gallery - allows both images and videos
+  /// Used in gallery mode to let user pick any media type
+  Future<void> _pickFromGalleryMixed() async {
+    try {
+      // Show dialog to choose media type and pick file
+      final result = await _showMediaTypeChoice();
+      
+      if (result == null) {
+        // User cancelled - if in gallery mode with no preview, go back
+        if (widget.isGalleryMode && !_showPreview && mounted) {
+          Navigator.pop(context);
+        }
+        return;
+      }
+      
+      if (!mounted) return;
+      
+      // Use user's choice from dialog (not extension detection - fails on web blob URLs)
+      final isVideo = result.isVideo;
+      setState(() {
+        _detectedIsVideo = isVideo;
+      });
+      
+      // Initialize video player if needed
+      if (isVideo) {
+        if (kIsWeb) {
+          _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(result.file.path));
+        } else {
+          _videoPlayerController = VideoPlayerController.file(File(result.file.path));
+        }
+        await _videoPlayerController!.initialize();
+        await _videoPlayerController!.setLooping(true);
+        await _videoPlayerController!.play();
+      }
+      
+      setState(() {
+        _capturedFilePath = result.file.path;
+        _showPreview = true;
+      });
+    } catch (e) {
+      _showError('Erreur: $e');
+      // If in gallery mode and error occurs, go back
+      if (widget.isGalleryMode && !_showPreview && mounted) {
+        Navigator.pop(context);
+      }
+    }
+  }
+  
+  /// Show dialog to choose between image or video, then open picker
+  /// Returns _MediaPickerResult with both the file and user's media type choice
+  Future<_MediaPickerResult?> _showMediaTypeChoice() async {
+    final choice = await showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Sélectionner un média',
+          style: TextStyle(
+            fontFamily: 'Poppins',
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.image_rounded, color: AppColors.primary),
+              ),
+              title: const Text('Image', style: TextStyle(fontFamily: 'Poppins')),
+              subtitle: const Text('Photo depuis la galerie', style: TextStyle(fontFamily: 'Poppins', fontSize: 12)),
+              onTap: () => Navigator.pop(context, 'image'),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.videocam_rounded, color: AppColors.accent),
+              ),
+              title: const Text('Vidéo', style: TextStyle(fontFamily: 'Poppins')),
+              subtitle: const Text('Vidéo depuis la galerie', style: TextStyle(fontFamily: 'Poppins', fontSize: 12)),
+              onTap: () => Navigator.pop(context, 'video'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+        ],
+      ),
+    );
+    
+    if (choice == null) return null;
+    
+    final bool isVideo = choice == 'video';
+    final XFile? file;
+    
+    if (isVideo) {
+      file = await _imagePicker.pickVideo(source: ImageSource.gallery);
+    } else {
+      file = await _imagePicker.pickImage(source: ImageSource.gallery);
+    }
+    
+    if (file == null) return null;
+    
+    // Return both file and user's choice (not extension-based detection)
+    return _MediaPickerResult(file, isVideo);
+  }
 
   void _onConfirm() {
     if (_capturedFilePath == null) return;
@@ -260,14 +455,14 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
       AppRoutes.photoReview,
       arguments: {
         'imagePath': _capturedFilePath,
-        'isVideo': widget.isVideo,
+        'isVideo': _isVideoMedia, // Use detected type in gallery mode
       },
     );
   }
 
   void _onRetake() {
-    // Delete the captured file
-    if (_capturedFilePath != null) {
+    // Delete the captured file (only on mobile, web uses blob URLs)
+    if (_capturedFilePath != null && !kIsWeb) {
       try {
         File(_capturedFilePath!).deleteSync();
       } catch (_) {}
@@ -279,7 +474,15 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
     setState(() {
       _capturedFilePath = null;
       _showPreview = false;
+      _detectedIsVideo = false; // Reset detected type
     });
+    
+    // In gallery mode, re-open the picker
+    if (widget.isGalleryMode) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _pickFromGalleryMixed();
+      });
+    }
   }
 
   void _showError(String message) {
@@ -298,9 +501,12 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
       body: SafeArea(
         child: Stack(
           children: [
-            // Camera preview or captured preview
+            // Camera preview or captured preview or gallery loading
             if (_showPreview && _capturedFilePath != null)
               _buildPreviewOverlay()
+            else if (widget.isGalleryMode)
+              // Gallery mode: show loading while picker is open
+              _buildGalleryLoading()
             else if (_isInitialized && _controller != null)
               Positioned.fill(
                 child: AspectRatio(
@@ -317,8 +523,8 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
                 child: CircularProgressIndicator(color: Colors.white),
               ),
             
-            // Top controls (only when not in preview mode)
-            if (!_showPreview)
+            // Top controls (only when not in preview mode and not gallery mode)
+            if (!_showPreview && !widget.isGalleryMode)
               Positioned(
                 top: 0,
                 left: 0,
@@ -326,8 +532,48 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
                 child: _buildTopControls(),
               ),
             
-            // Bottom controls (only when not in preview mode)
-            if (!_showPreview)
+            // Recording timer indicator (video mode only, not in gallery mode)
+            if (!_showPreview && !widget.isGalleryMode && widget.isVideo && _isRecording)
+              Positioned(
+                top: 70,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.error.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _formatDuration(_recordingDuration),
+                          style: const TextStyle(
+                            fontFamily: 'Poppins',
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            
+            // Bottom controls (only when not in preview mode and not gallery mode)
+            if (!_showPreview && !widget.isGalleryMode)
               Positioned(
                 bottom: 0,
                 left: 0,
@@ -335,14 +581,75 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
                 child: _buildBottomControls(),
               ),
             
-            // Zoom slider (only when not in preview mode)
-            if (!_showPreview && _isInitialized && _maxZoom > _minZoom)
+            // Zoom slider (only when not in preview mode and not gallery mode)
+            if (!_showPreview && !widget.isGalleryMode && _isInitialized && _maxZoom > _minZoom)
               Positioned(
                 right: 20,
                 top: 100,
                 bottom: 200,
                 child: _buildZoomSlider(),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Loading screen shown in gallery mode while file picker is open
+  Widget _buildGalleryLoading() {
+    return Container(
+      color: Colors.black,
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Icon(
+                Icons.photo_library_rounded,
+                color: AppColors.primary,
+                size: 40,
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Sélection depuis la galerie',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Choisissez une image ou vidéo',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                color: Colors.white.withValues(alpha: 0.7),
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 32),
+            const CircularProgressIndicator(color: AppColors.primary),
+            const SizedBox(height: 32),
+            // Back button
+            TextButton.icon(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.arrow_back_rounded, color: Colors.white70),
+              label: const Text(
+                'Retour',
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  color: Colors.white70,
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -356,7 +663,7 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
         children: [
           // Preview content
           Positioned.fill(
-            child: widget.isVideo && _videoPlayerController != null
+            child: _isVideoMedia && _videoPlayerController != null
                 ? Center(
                     child: AspectRatio(
                       aspectRatio: _videoPlayerController!.value.aspectRatio,
@@ -390,7 +697,7 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
           ),
           
           // Video play indicator
-          if (widget.isVideo)
+          if (_isVideoMedia)
             Positioned(
               top: 16,
               right: 16,
@@ -685,6 +992,14 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
       ),
     );
   }
+}
+
+/// Result from media picker dialog - holds file and whether user chose video
+class _MediaPickerResult {
+  final XFile file;
+  final bool isVideo;
+  
+  _MediaPickerResult(this.file, this.isVideo);
 }
 
 class _ControlButton extends StatelessWidget {

@@ -32,7 +32,7 @@ class _CreateDetailsModalState extends State<CreateDetailsModal> {
   final _searchController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _filterIconKey = GlobalKey();
-  final _overlayPortalController = OverlayPortalController();
+  // Note: _overlayPortalController reserved for future use with OverlayPortal widget
   
   // PERFORMANCE: Debounce timer for search input
   // Prevents excessive filtering operations while user is typing.

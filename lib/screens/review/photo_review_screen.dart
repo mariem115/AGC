@@ -56,11 +56,24 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
 
     // Initialize video player if needed
     if (widget.isVideo) {
-      _videoController = VideoPlayerController.file(File(widget.imagePath))
-        ..initialize().then((_) {
-          setState(() {});
-          _videoController!.setLooping(true);
-        });
+      // On web, use networkUrl since dart:io File is not supported
+      if (kIsWeb) {
+        _videoController = VideoPlayerController.networkUrl(Uri.parse(widget.imagePath))
+          ..initialize().then((_) {
+            if (mounted) {
+              setState(() {});
+              _videoController!.setLooping(true);
+            }
+          });
+      } else {
+        _videoController = VideoPlayerController.file(File(widget.imagePath))
+          ..initialize().then((_) {
+            if (mounted) {
+              setState(() {});
+              _videoController!.setLooping(true);
+            }
+          });
+      }
     }
   }
 
@@ -329,12 +342,14 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
           // - referenceId: selected reference ID (int)
           // - referenceType: selected reference type (1=Component, 2=Semi-final, 3=Final)
           // - mediaType: quality status (4=Bonne/OK, 5=Mauvaise/NOK, 6=Neutre/Neutral)
-          final uploadResult = await mediaService.uploadImage(
+          // - isVideo: whether this is a video upload
+          final uploadResult = await mediaService.uploadMedia(
             file: file,
             referenceId: refId,
             referenceType: refType,
             mediaType: quality,
-            imageName: imageName,
+            fileName: imageName,
+            isVideo: draft.isVideo,
           );
           
           if (!uploadResult.isSuccess) {
@@ -361,9 +376,10 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
       if (!kIsWeb) {
         final file = File(draft.filePath);
         if (await file.exists()) {
-          final saved = await mediaProvider.saveImageLocally(
+          final saved = await mediaProvider.saveMediaLocally(
             file,
-            draft.referenceName ?? 'AGC_Photo',
+            draft.referenceName ?? (draft.isVideo ? 'AGC_Video' : 'AGC_Photo'),
+            isVideo: draft.isVideo,
           );
           if (saved != null) {
             savedPath = saved;

@@ -7,6 +7,7 @@ class MediaItem {
   final int? mediaType; // 1=Photo, 4=OK, 5=NOK, 6=Neutral
   final DateTime? createdAt;
   final bool isLocal;
+  final bool isVideo;
   
   MediaItem({
     required this.id,
@@ -16,6 +17,7 @@ class MediaItem {
     this.mediaType,
     this.createdAt,
     this.isLocal = false,
+    this.isVideo = false,
   });
   
   factory MediaItem.fromJson(Map<String, dynamic> json) {
@@ -29,18 +31,21 @@ class MediaItem {
           ? DateTime.tryParse(json['createdAt']) 
           : null,
       isLocal: json['isLocal'] ?? false,
+      isVideo: json['isVideo'] ?? false,
     );
   }
   
   factory MediaItem.local({
     required String path,
     String? name,
+    bool isVideo = false,
   }) {
     return MediaItem(
       id: DateTime.now().millisecondsSinceEpoch,
       name: name,
       path: path,
       isLocal: true,
+      isVideo: isVideo,
       createdAt: DateTime.now(),
     );
   }
@@ -54,6 +59,7 @@ class MediaItem {
       'mediaType': mediaType,
       'createdAt': createdAt?.toIso8601String(),
       'isLocal': isLocal,
+      'isVideo': isVideo,
     };
   }
   

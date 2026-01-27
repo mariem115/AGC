@@ -241,9 +241,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       _MenuItem(
         icon: Icons.photo_library_rounded,
         title: 'Galerie',
-        subtitle: 'Photos locales',
+        subtitle: 'Importer depuis galerie',
         color: AppColors.statusOK,
-        onTap: () => Navigator.pushNamed(context, AppRoutes.gallery),
+        onTap: () => Navigator.pushNamed(context, AppRoutes.galleryImport),
       ),
       _MenuItem(
         icon: Icons.drafts_rounded,

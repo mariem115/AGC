@@ -18,11 +18,14 @@ class AppConstants {
   static const int referenceTypeSemiFinal = 2;
   static const int referenceTypeFinal = 3;
   
-  // Media Types
+  // Media Types (base types)
   static const int mediaTypePhoto = 1;
-  static const int mediaTypeOK = 4;
-  static const int mediaTypeNOK = 5;
-  static const int mediaTypeNeutral = 6;
+  static const int mediaTypeVideo = 2;
+  
+  // Quality Status (used as mediaType for upload)
+  static const int mediaTypeOK = 4;      // Bonne qualité
+  static const int mediaTypeNOK = 5;     // Mauvaise qualité
+  static const int mediaTypeNeutral = 6; // Neutre
   
   // Storage Keys
   static const String keyIsLoggedIn = 'is_logged_in';
