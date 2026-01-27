@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:gal/gal.dart';
+import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
@@ -47,7 +49,9 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
     // Load existing draft if editing
     if (widget.draftId != null) {
       setState(() => _isLoading = true);
-      final draft = await context.read<DraftProvider>().getDraftById(widget.draftId!);
+      final draft = await context.read<DraftProvider>().getDraftById(
+        widget.draftId!,
+      );
       setState(() {
         _existingDraft = draft;
         _isLoading = false;
@@ -58,13 +62,14 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
     if (widget.isVideo) {
       // On web, use networkUrl since dart:io File is not supported
       if (kIsWeb) {
-        _videoController = VideoPlayerController.networkUrl(Uri.parse(widget.imagePath))
-          ..initialize().then((_) {
-            if (mounted) {
-              setState(() {});
-              _videoController!.setLooping(true);
-            }
-          });
+        _videoController =
+            VideoPlayerController.networkUrl(Uri.parse(widget.imagePath))
+              ..initialize().then((_) {
+                if (mounted) {
+                  setState(() {});
+                  _videoController!.setLooping(true);
+                }
+              });
       } else {
         _videoController = VideoPlayerController.file(File(widget.imagePath))
           ..initialize().then((_) {
@@ -109,22 +114,29 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
       if (kIsWeb) {
         // Web: use download helper with proper filename and extension
         final extension = _getFileExtension(widget.imagePath);
-        final filename = 'AGC_${DateTime.now().millisecondsSinceEpoch}$extension';
+        final filename =
+            'AGC_${DateTime.now().millisecondsSinceEpoch}$extension';
         download_helper.downloadFile(widget.imagePath, filename);
       } else {
         // Mobile: save to device gallery with proper extension
         await _saveToGallery();
       }
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(kIsWeb 
-                ? (widget.isVideo ? 'Vidéo téléchargée' : 'Photo téléchargée')
-                : (widget.isVideo ? 'Vidéo téléchargée dans la galerie' : 'Photo téléchargée dans la galerie')),
+            content: Text(
+              kIsWeb
+                  ? (widget.isVideo ? 'Vidéo téléchargée' : 'Photo téléchargée')
+                  : (widget.isVideo
+                        ? 'Vidéo téléchargée dans la galerie'
+                        : 'Photo téléchargée dans la galerie'),
+            ),
             backgroundColor: AppColors.success,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         );
       }
@@ -146,14 +158,14 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
     if (!await file.exists()) {
       throw Exception('Fichier non trouvé');
     }
-    
+
     final extension = _getFileExtension(widget.imagePath);
     final name = 'AGC_${DateTime.now().millisecondsSinceEpoch}$extension';
-    
+
     // Determine the file path to save - ensure it has a proper extension
     String filePathToSave = widget.imagePath;
     File? tempFile;
-    
+
     // If the original file doesn't have an extension, copy it to a temp file with the correct extension
     final currentExt = p.extension(widget.imagePath).toLowerCase();
     if (currentExt.isEmpty) {
@@ -162,7 +174,7 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
       tempFile = await file.copy(tempPath);
       filePathToSave = tempPath;
     }
-    
+
     try {
       // Use gal package to save to gallery
       if (widget.isVideo) {
@@ -204,13 +216,16 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
       if (!await tempFile.exists()) return null;
 
       final appDir = await getApplicationDocumentsDirectory();
-      final draftsDir = Directory('${appDir.path}${Platform.pathSeparator}AGC${Platform.pathSeparator}drafts');
+      final draftsDir = Directory(
+        '${appDir.path}${Platform.pathSeparator}AGC${Platform.pathSeparator}drafts',
+      );
       if (!await draftsDir.exists()) {
         await draftsDir.create(recursive: true);
       }
 
       final ext = _getFileExtension(tempPath);
-      final newPath = '${draftsDir.path}${Platform.pathSeparator}draft_${DateTime.now().millisecondsSinceEpoch}$ext';
+      final newPath =
+          '${draftsDir.path}${Platform.pathSeparator}draft_${DateTime.now().millisecondsSinceEpoch}$ext';
       await tempFile.copy(newPath);
 
       return newPath;
@@ -222,14 +237,33 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
 
   Future<void> _onSaveDraft(DraftItem draft) async {
     Navigator.pop(context); // Close modal
-    
+
     final draftProvider = context.read<DraftProvider>();
-    
+
     try {
       String persistentPath = draft.filePath;
-      
+      Uint8List? fileBytes;
+
+      // On web, we need to fetch the file bytes from the blob URL
+      // and store them in IndexedDB for persistence across page refreshes
+      if (kIsWeb && _existingDraft == null) {
+        try {
+          final response = await http.get(Uri.parse(widget.imagePath));
+          if (response.statusCode == 200) {
+            fileBytes = response.bodyBytes;
+            debugPrint(
+              'PhotoReviewScreen: Fetched ${fileBytes.length} bytes from blob URL',
+            );
+          } else {
+            throw Exception('Failed to fetch file bytes from blob URL');
+          }
+        } catch (e) {
+          debugPrint('PhotoReviewScreen: Error fetching blob URL: $e');
+          throw Exception('Impossible de récupérer les données du fichier');
+        }
+      }
+
       // Copy temp file to persistent location (mobile only)
-      // On web, files are blob URLs that persist in browser memory
       if (!kIsWeb && _existingDraft == null) {
         // Only copy for new drafts, not when updating existing ones
         final copied = await _copyToPersistentStorage(draft.filePath);
@@ -237,18 +271,22 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
           persistentPath = copied;
         } else {
           // File copy failed on mobile - cannot save draft without persistent file
-          throw Exception('Impossible de copier le fichier vers le stockage persistant');
+          throw Exception(
+            'Impossible de copier le fichier vers le stockage persistant',
+          );
         }
       }
-      
+
       if (_existingDraft != null) {
         // Update existing draft (path is already persistent)
         final success = await draftProvider.updateDraft(draft);
         if (!success) {
-          throw Exception(draftProvider.error ?? 'Échec de la mise à jour du brouillon');
+          throw Exception(
+            draftProvider.error ?? 'Échec de la mise à jour du brouillon',
+          );
         }
       } else {
-        // Save new draft with persistent path
+        // Save new draft with persistent path and file bytes (for web)
         final savedDraft = await draftProvider.saveDraft(
           filePath: persistentPath,
           isVideo: draft.isVideo,
@@ -257,11 +295,14 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
           referenceType: draft.referenceType,
           description: draft.description,
           qualityStatus: draft.qualityStatus,
+          fileBytes: fileBytes, // Pass file bytes for IndexedDB storage on web
         );
-        
+
         // Check if save was successful
         if (savedDraft == null) {
-          throw Exception(draftProvider.error ?? 'Échec de la sauvegarde du brouillon');
+          throw Exception(
+            draftProvider.error ?? 'Échec de la sauvegarde du brouillon',
+          );
         }
       }
 
@@ -271,7 +312,9 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
             content: const Text('Brouillon sauvegardé'),
             backgroundColor: AppColors.success,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         );
         Navigator.pop(context); // Go back
@@ -290,11 +333,11 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
 
   Future<void> _onSaveFinal(DraftItem draft) async {
     Navigator.pop(context); // Close modal
-    
+
     final mediaProvider = context.read<MediaProvider>();
     final draftProvider = context.read<DraftProvider>();
     final mediaService = MediaService();
-    
+
     // Validate required fields before proceeding
     // This prevents _Namespace errors by ensuring we have valid primitive data
     if (draft.referenceId == null || draft.referenceType == null) {
@@ -304,25 +347,37 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
             content: const Text('Référence invalide - veuillez réessayer'),
             backgroundColor: AppColors.error,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         );
       }
       return;
     }
-    
+
     // DEBUG: Log draft data to help diagnose serialization issues
     debugPrint('=== SAVE FINAL DEBUG ===');
-    debugPrint('referenceId: ${draft.referenceId} (${draft.referenceId.runtimeType})');
-    debugPrint('referenceType: ${draft.referenceType} (${draft.referenceType.runtimeType})');
-    debugPrint('qualityStatus: ${draft.qualityStatus} (${draft.qualityStatus.runtimeType})');
-    debugPrint('referenceName: ${draft.referenceName} (${draft.referenceName.runtimeType})');
-    debugPrint('description: ${draft.description} (${draft.description.runtimeType})');
+    debugPrint(
+      'referenceId: ${draft.referenceId} (${draft.referenceId.runtimeType})',
+    );
+    debugPrint(
+      'referenceType: ${draft.referenceType} (${draft.referenceType.runtimeType})',
+    );
+    debugPrint(
+      'qualityStatus: ${draft.qualityStatus} (${draft.qualityStatus.runtimeType})',
+    );
+    debugPrint(
+      'referenceName: ${draft.referenceName} (${draft.referenceName.runtimeType})',
+    );
+    debugPrint(
+      'description: ${draft.description} (${draft.description.runtimeType})',
+    );
     debugPrint('========================');
-    
+
     try {
       String savedPath = draft.filePath;
-      
+
       // === Step 1: Upload to server (mobile only - web doesn't support dart:io File) ===
       // On web, files are blob URLs that can't be accessed via dart:io
       // This prevents "Unsupported operation: _Namespace" error on web platform
@@ -332,12 +387,12 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
           // Prepare file name for upload
           final ext = _getFileExtension(draft.filePath);
           final imageName = 'AGC_${DateTime.now().millisecondsSinceEpoch}$ext';
-          
+
           // Extract primitive values explicitly to avoid serialization issues
           final int refId = draft.referenceId!;
           final int refType = draft.referenceType!;
           final int quality = draft.qualityStatus;
-          
+
           // Upload to server with:
           // - referenceId: selected reference ID (int)
           // - referenceType: selected reference type (1=Component, 2=Semi-final, 3=Final)
@@ -351,16 +406,20 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
             fileName: imageName,
             isVideo: draft.isVideo,
           );
-          
+
           if (!uploadResult.isSuccess) {
             // Server upload failed - show error but continue with local save
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('Erreur serveur: ${uploadResult.error ?? "Upload échoué"}\nSauvegarde locale en cours...'),
+                  content: Text(
+                    'Erreur serveur: ${uploadResult.error ?? "Upload échoué"}\nSauvegarde locale en cours...',
+                  ),
                   backgroundColor: AppColors.warning,
                   behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                   duration: const Duration(seconds: 3),
                 ),
               );
@@ -370,7 +429,7 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
           }
         }
       }
-      
+
       // === Step 2: Save locally ===
       // Copy to persistent storage if not already there (mobile only)
       if (!kIsWeb) {
@@ -386,7 +445,7 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
           }
         }
       }
-      
+
       // === Step 3: Update local database ===
       if (_existingDraft != null) {
         // Mark existing draft as finalized with updated path
@@ -406,7 +465,7 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
           await draftProvider.finalizeDraft(savedDraft);
         }
       }
-      
+
       // Refresh gallery to show the new image
       await mediaProvider.loadLocalImages();
 
@@ -416,7 +475,9 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
             content: const Text('Média sauvegardé avec succès'),
             backgroundColor: AppColors.success,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         );
         Navigator.pop(context); // Go back
@@ -467,9 +528,7 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
               Navigator.pop(context); // Close dialog
               await _deleteMedia();
             },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
             child: const Text('Supprimer'),
           ),
         ],
@@ -499,10 +558,14 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(widget.isVideo ? 'Vidéo supprimée' : 'Photo supprimée'),
+            content: Text(
+              widget.isVideo ? 'Vidéo supprimée' : 'Photo supprimée',
+            ),
             backgroundColor: AppColors.success,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         );
         Navigator.pop(context);
@@ -564,10 +627,8 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
           : Column(
               children: [
                 // Media preview
-                Expanded(
-                  child: _buildMediaPreview(),
-                ),
-                
+                Expanded(child: _buildMediaPreview()),
+
                 // Action buttons
                 _buildActionButtons(),
               ],
@@ -635,9 +696,7 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
 
   Widget _buildVideoPreview() {
     if (_videoController == null || !_videoController!.value.isInitialized) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     return Stack(
@@ -720,7 +779,9 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
               child: ElevatedButton.icon(
                 onPressed: _openCreateDetailsModal,
                 icon: const Icon(Icons.edit_note_rounded),
-                label: Text(_existingDraft != null ? 'Modifier Détails' : 'Crée Détails'),
+                label: Text(
+                  _existingDraft != null ? 'Modifier Détails' : 'Crée Détails',
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
@@ -736,9 +797,9 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 12),
-            
+
             // Delete button
             TextButton.icon(
               onPressed: _showDeleteConfirmation,

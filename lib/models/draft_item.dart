@@ -4,6 +4,7 @@ import 'dart:convert';
 class DraftItem {
   final int? id;
   final String filePath;
+  final String? blobKey; // Key for IndexedDB blob storage (web)
   final bool isVideo;
   final int? referenceId;
   final String? referenceName;
@@ -17,6 +18,7 @@ class DraftItem {
   DraftItem({
     this.id,
     required this.filePath,
+    this.blobKey,
     this.isVideo = false,
     this.referenceId,
     this.referenceName,
@@ -33,6 +35,7 @@ class DraftItem {
     return DraftItem(
       id: map['id'] as int?,
       filePath: map['file_path'] as String,
+      blobKey: map['blob_key'] as String?,
       isVideo: (map['is_video'] as int?) == 1,
       referenceId: map['reference_id'] as int?,
       referenceName: map['reference_name'] as String?,
@@ -51,11 +54,13 @@ class DraftItem {
     return {
       if (id != null) 'id': id,
       'file_path': filePath,
+      'blob_key': blobKey,
       'is_video': isVideo ? 1 : 0,
       'reference_id': referenceId,
       'reference_name': referenceName,
       'reference_type': referenceType,
-      'description': description ?? '',  // Never send null to avoid _Namespace errors
+      'description':
+          description ?? '', // Never send null to avoid _Namespace errors
       'quality_status': qualityStatus,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
@@ -70,11 +75,12 @@ class DraftItem {
     return {
       'id': id,
       'file_path': filePath,
+      'blob_key': blobKey,
       'is_video': isVideo,
       'reference_id': referenceId,
-      'reference_name': referenceName ?? '',  // Never send null
+      'reference_name': referenceName ?? '', // Never send null
       'reference_type': referenceType,
-      'description': description ?? '',  // Never send null
+      'description': description ?? '', // Never send null
       'quality_status': qualityStatus,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
@@ -87,6 +93,7 @@ class DraftItem {
     return DraftItem(
       id: json['id'] as int?,
       filePath: json['file_path'] as String,
+      blobKey: json['blob_key'] as String?,
       isVideo: json['is_video'] as bool? ?? false,
       referenceId: json['reference_id'] as int?,
       referenceName: json['reference_name'] as String?,
@@ -111,6 +118,7 @@ class DraftItem {
   DraftItem copyWith({
     int? id,
     String? filePath,
+    String? blobKey,
     bool? isVideo,
     int? referenceId,
     String? referenceName,
@@ -124,6 +132,7 @@ class DraftItem {
     return DraftItem(
       id: id ?? this.id,
       filePath: filePath ?? this.filePath,
+      blobKey: blobKey ?? this.blobKey,
       isVideo: isVideo ?? this.isVideo,
       referenceId: referenceId ?? this.referenceId,
       referenceName: referenceName ?? this.referenceName,
