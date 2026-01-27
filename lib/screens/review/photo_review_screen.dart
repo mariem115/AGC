@@ -38,6 +38,7 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
   bool _isVideoPlaying = false;
   DraftItem? _existingDraft;
   bool _isLoading = false;
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -236,6 +237,7 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
   }
 
   Future<void> _onSaveDraft(DraftItem draft) async {
+    setState(() => _isSaving = true);
     Navigator.pop(context); // Close modal
 
     final draftProvider = context.read<DraftProvider>();
@@ -321,6 +323,7 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
       }
     } catch (e) {
       if (mounted) {
+        setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Erreur lors de la sauvegarde: $e'),
@@ -332,6 +335,7 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
   }
 
   Future<void> _onSaveFinal(DraftItem draft) async {
+    setState(() => _isSaving = true);
     Navigator.pop(context); // Close modal
 
     final mediaProvider = context.read<MediaProvider>();
@@ -342,6 +346,7 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
     // This prevents _Namespace errors by ensuring we have valid primitive data
     if (draft.referenceId == null || draft.referenceType == null) {
       if (mounted) {
+        setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('Référence invalide - veuillez réessayer'),
@@ -470,6 +475,7 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
       await mediaProvider.loadLocalImages();
 
       if (mounted) {
+        setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('Média sauvegardé avec succès'),
@@ -484,6 +490,7 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
       }
     } catch (e) {
       if (mounted) {
+        setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Erreur lors de la sauvegarde: $e'),
@@ -537,6 +544,7 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
   }
 
   Future<void> _deleteMedia() async {
+    setState(() => _isSaving = true);
     try {
       // Delete existing draft if editing
       if (_existingDraft != null) {
@@ -572,6 +580,7 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
       }
     } catch (e) {
       if (mounted) {
+        setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Erreur lors de la suppression: $e'),
@@ -605,7 +614,7 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
         actions: [
           // Download/Share button
           IconButton(
-            onPressed: _downloadMedia,
+            onPressed: _isSaving ? null : _downloadMedia,
             icon: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
@@ -777,10 +786,23 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: _openCreateDetailsModal,
-                icon: const Icon(Icons.edit_note_rounded),
+                onPressed: _isSaving ? null : _openCreateDetailsModal,
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.edit_note_rounded),
                 label: Text(
-                  _existingDraft != null ? 'Modifier Détails' : 'Crée Détails',
+                  _isSaving
+                      ? 'Sauvegarde...'
+                      : (_existingDraft != null
+                            ? 'Modifier Détails'
+                            : 'Crée Détails'),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
@@ -802,7 +824,7 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
 
             // Delete button
             TextButton.icon(
-              onPressed: _showDeleteConfirmation,
+              onPressed: _isSaving ? null : _showDeleteConfirmation,
               icon: const Icon(Icons.delete_outline_rounded),
               label: const Text('Supprimer'),
               style: TextButton.styleFrom(

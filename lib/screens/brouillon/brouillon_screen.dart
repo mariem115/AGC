@@ -87,15 +87,30 @@ class _BrouillonScreenState extends State<BrouillonScreen> {
 
   Future<void> _deleteDraft(DraftItem draft) async {
     final success = await context.read<DraftProvider>().deleteDraft(draft);
-    if (mounted && success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Brouillon supprimé'),
-          backgroundColor: AppColors.success,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-      );
+    if (mounted) {
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Brouillon supprimé'),
+            backgroundColor: AppColors.success,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Erreur lors de la suppression du brouillon'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+      }
     }
   }
 
@@ -369,6 +384,7 @@ class _DraftListItemState extends State<_DraftListItem> {
   Uint8List? _blobData;
   bool _isLoadingBlob = false;
   bool _blobLoadFailed = false;
+  bool _isProcessing = false;
 
   @override
   void initState() {
@@ -603,7 +619,7 @@ class _DraftListItemState extends State<_DraftListItem> {
               children: [
                 // Edit button
                 TextButton.icon(
-                  onPressed: widget.onEdit,
+                  onPressed: _isProcessing ? null : widget.onEdit,
                   icon: const Icon(Icons.edit_rounded, size: 18),
                   label: const Text('Modifier'),
                   style: TextButton.styleFrom(
@@ -618,7 +634,7 @@ class _DraftListItemState extends State<_DraftListItem> {
 
                 // Delete button
                 TextButton.icon(
-                  onPressed: widget.onDelete,
+                  onPressed: _isProcessing ? null : widget.onDelete,
                   icon: const Icon(Icons.delete_outline_rounded, size: 18),
                   label: const Text('Supprimer'),
                   style: TextButton.styleFrom(
@@ -635,7 +651,18 @@ class _DraftListItemState extends State<_DraftListItem> {
 
                 // Finalize button
                 TextButton.icon(
-                  onPressed: widget.onFinalize,
+                  onPressed: _isProcessing
+                      ? null
+                      : () async {
+                          setState(() => _isProcessing = true);
+                          try {
+                            widget.onFinalize();
+                          } finally {
+                            if (mounted) {
+                              setState(() => _isProcessing = false);
+                            }
+                          }
+                        },
                   icon: const Icon(Icons.cloud_upload_rounded, size: 18),
                   label: const Text('Finaliser'),
                   style: TextButton.styleFrom(
