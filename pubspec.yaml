@@ -40,6 +40,7 @@ dependencies:
 
   # Image Processing
   image: ^4.3.0
+  image_cropper: 8.0.0
 
   # UI Components
   flutter_svg: ^2.0.16

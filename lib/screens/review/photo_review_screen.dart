@@ -15,6 +15,7 @@ import '../../providers/media_provider.dart';
 import '../../services/media_service.dart';
 import '../../utils/download_helper.dart' as download_helper;
 import '../../widgets/create_details_modal.dart';
+import '../../widgets/zoom_select_screen.dart';
 
 /// Photo/Video review screen after capture or when editing a draft
 class PhotoReviewScreen extends StatefulWidget {
@@ -39,6 +40,12 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
   DraftItem? _existingDraft;
   bool _isLoading = false;
   bool _isSaving = false;
+  
+  /// Working media path - may be different from widget.imagePath if cropped
+  String? _workingMediaPath;
+  
+  /// Whether we're currently using a cropped version (always an image)
+  bool _isUsingCroppedMedia = false;
 
   @override
   void initState() {
@@ -86,7 +93,23 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
   @override
   void dispose() {
     _videoController?.dispose();
+    // Clean up temporary cropped file if exists
+    _cleanupTempCroppedFile();
     super.dispose();
+  }
+  
+  /// Clean up temporary cropped file
+  Future<void> _cleanupTempCroppedFile() async {
+    if (_workingMediaPath != null && _isUsingCroppedMedia) {
+      try {
+        final file = File(_workingMediaPath!);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (e) {
+        debugPrint('Error cleaning up temp cropped file: $e');
+      }
+    }
   }
 
   void _toggleVideoPlayback() {
@@ -195,19 +218,66 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
     }
   }
 
+  /// Get the current media path (cropped or original)
+  String get _currentMediaPath => _workingMediaPath ?? widget.imagePath;
+  
+  /// Whether the current media is a video (false if cropped, since crop produces image)
+  bool get _currentIsVideo => _isUsingCroppedMedia ? false : widget.isVideo;
+
   void _openCreateDetailsModal() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => CreateDetailsModal(
-        imagePath: widget.imagePath,
-        isVideo: widget.isVideo,
+        imagePath: _currentMediaPath,
+        isVideo: _currentIsVideo,
         existingDraft: _existingDraft,
         onSaveDraft: _onSaveDraft,
         onSaveFinal: _onSaveFinal,
       ),
     );
+  }
+  
+  /// Open zoom and select mode for cropping
+  /// Only available on mobile (not web)
+  Future<void> _openZoomSelectMode() async {
+    if (kIsWeb) {
+      // Web not supported for this feature
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Recadrage non disponible sur le web'),
+          backgroundColor: AppColors.warning,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+      );
+      return;
+    }
+    
+    final result = await Navigator.push<ZoomSelectResult>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ZoomSelectScreen(
+          mediaPath: widget.imagePath,
+          isVideo: widget.isVideo,
+          videoController: widget.isVideo ? _videoController : null,
+        ),
+      ),
+    );
+    
+    if (result != null && mounted) {
+      // Store the cropped media path
+      setState(() {
+        _workingMediaPath = result.croppedPath;
+        _isUsingCroppedMedia = true;
+      });
+      
+      // Immediately open the create details modal with cropped media
+      _openCreateDetailsModal();
+    }
   }
 
   /// Copy temp file to persistent storage for drafts
@@ -659,9 +729,42 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
           ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: widget.isVideo ? _buildVideoPreview() : _buildImagePreview(),
+      child: Stack(
+        children: [
+          // Media content
+          ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: widget.isVideo ? _buildVideoPreview() : _buildImagePreview(),
+          ),
+          
+          // Zoom/Crop icon (only on mobile, not web)
+          // For videos, position below the video indicator; for images, top-right
+          if (!kIsWeb)
+            Positioned(
+              top: widget.isVideo ? 52 : 12, // Below video indicator if video
+              right: 12,
+              child: _buildZoomIcon(),
+            ),
+        ],
+      ),
+    );
+  }
+  
+  /// Build the zoom/crop icon button
+  Widget _buildZoomIcon() {
+    return GestureDetector(
+      onTap: _isSaving ? null : _openZoomSelectMode,
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(
+          Icons.crop_free_rounded,
+          color: Colors.white,
+          size: 22,
+        ),
       ),
     );
   }

@@ -1,9 +1,12 @@
 /// API and app constants
 class AppConstants {
   // API Configuration
-  static const String baseUrl = 'https://localhost:44320/WorksSession/AGC/AGC.aspx';
-   //For production: 'https://www.quali-one.com/QualiOne/WorksSession/AGC/AGC.aspx'
-  // static const String baseUrl = 'https://www.quali-one.com/QualiOne/WorksSession/AGC/AGC.aspx';
+  // Dev environment
+  static const String baseUrl ='https://dev.quali-one.com/QualiOne/WorksSession/AGC/AGC.aspx';
+
+  // For production:
+  // static const String baseUrl =
+  //     'https://www.quali-one.com/QualiOne/WorksSession/AGC/AGC.aspx';
   
   // API Actions
   static const String actionLogin = 'login';
