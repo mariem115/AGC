@@ -17,7 +17,7 @@ class DatabaseService {
   // Mobile: SQLite database
   static Database? _database;
   static const String _databaseName = 'agc_drafts.db';
-  static const int _databaseVersion = 1;
+  static const int _databaseVersion = 2; // Incremented for blob_key column
 
   // Web: SharedPreferences key
   static const String _webDraftsKey = 'agc_drafts';
@@ -54,6 +54,7 @@ class DatabaseService {
       CREATE TABLE drafts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         file_path TEXT NOT NULL,
+        blob_key TEXT,
         is_video INTEGER DEFAULT 0,
         reference_id INTEGER,
         reference_name TEXT,
@@ -69,7 +70,11 @@ class DatabaseService {
 
   /// Handle database upgrades
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // Add migration logic here for future versions
+    // Migration from version 1 to 2: add blob_key column
+    if (oldVersion < 2) {
+      await db.execute('ALTER TABLE drafts ADD COLUMN blob_key TEXT');
+      debugPrint('Database upgraded: added blob_key column');
+    }
   }
 
   // ========== WEB STORAGE HELPERS ==========
