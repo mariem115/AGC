@@ -12,6 +12,7 @@ import '../../config/theme.dart';
 import '../../models/draft_item.dart';
 import '../../providers/draft_provider.dart';
 import '../../providers/media_provider.dart';
+import '../../services/crop_service.dart';
 import '../../services/media_service.dart';
 import '../../utils/download_helper.dart' as download_helper;
 import '../../widgets/create_details_modal.dart';
@@ -411,6 +412,7 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
     final mediaProvider = context.read<MediaProvider>();
     final draftProvider = context.read<DraftProvider>();
     final mediaService = MediaService();
+    final cropService = CropService();
 
     // Validate required fields before proceeding
     // This prevents _Namespace errors by ensuring we have valid primitive data
@@ -448,7 +450,11 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
     debugPrint(
       'description: ${draft.description} (${draft.description.runtimeType})',
     );
+    debugPrint('isUsingCroppedMedia: $_isUsingCroppedMedia');
     debugPrint('========================');
+
+    // Track temporary composite file for cleanup
+    String? compositeFilePath;
 
     try {
       String savedPath = draft.filePath;
@@ -457,10 +463,36 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
       // On web, files are blob URLs that can't be accessed via dart:io
       // This prevents "Unsupported operation: _Namespace" error on web platform
       if (!kIsWeb) {
-        final file = File(draft.filePath);
-        if (await file.exists()) {
+        // Determine what file to upload:
+        // - If using cropped media, generate composite image first
+        // - Otherwise, upload the original file
+        File fileToUpload;
+        
+        if (_isUsingCroppedMedia && _workingMediaPath != null) {
+          // Generate composite image with original + cropped detail + metadata
+          debugPrint('Generating composite image...');
+          compositeFilePath = await cropService.generateCompositeImage(
+            originalPath: widget.imagePath,
+            croppedPath: _workingMediaPath!,
+            qualityStatus: draft.qualityStatus,
+            description: draft.description,
+            referenceName: draft.referenceName,
+            createdAt: draft.createdAt,
+          );
+          
+          if (compositeFilePath == null) {
+            throw Exception('Échec de la génération de l\'image composite');
+          }
+          
+          debugPrint('Composite image generated at: $compositeFilePath');
+          fileToUpload = File(compositeFilePath);
+        } else {
+          fileToUpload = File(draft.filePath);
+        }
+        
+        if (await fileToUpload.exists()) {
           // Prepare file name for upload
-          final ext = _getFileExtension(draft.filePath);
+          final ext = _getFileExtension(fileToUpload.path);
           final imageName = 'AGC_${DateTime.now().millisecondsSinceEpoch}$ext';
 
           // Extract primitive values explicitly to avoid serialization issues
@@ -472,14 +504,14 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
           // - referenceId: selected reference ID (int)
           // - referenceType: selected reference type (1=Component, 2=Semi-final, 3=Final)
           // - mediaType: quality status (4=Bonne/OK, 5=Mauvaise/NOK, 6=Neutre/Neutral)
-          // - isVideo: whether this is a video upload
+          // - isVideo: false for composite images (always an image)
           final uploadResult = await mediaService.uploadMedia(
-            file: file,
+            file: fileToUpload,
             referenceId: refId,
             referenceType: refType,
             mediaType: quality,
             fileName: imageName,
-            isVideo: draft.isVideo,
+            isVideo: false, // Composite is always an image
           );
 
           if (!uploadResult.isSuccess) {
@@ -506,14 +538,21 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
       }
 
       // === Step 2: Save locally ===
-      // Copy to persistent storage if not already there (mobile only)
+      // Save the composite image (or original file) to persistent storage
       if (!kIsWeb) {
-        final file = File(draft.filePath);
-        if (await file.exists()) {
+        // Determine which file to save locally
+        File fileToSave;
+        if (compositeFilePath != null) {
+          fileToSave = File(compositeFilePath);
+        } else {
+          fileToSave = File(draft.filePath);
+        }
+        
+        if (await fileToSave.exists()) {
           final saved = await mediaProvider.saveMediaLocally(
-            file,
-            draft.referenceName ?? (draft.isVideo ? 'AGC_Video' : 'AGC_Photo'),
-            isVideo: draft.isVideo,
+            fileToSave,
+            draft.referenceName ?? 'AGC_Photo',
+            isVideo: false, // Composite is always an image
           );
           if (saved != null) {
             savedPath = saved;
@@ -529,7 +568,7 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
         // Save as new finalized record (isDraft will be set to false after)
         final savedDraft = await draftProvider.saveDraft(
           filePath: savedPath,
-          isVideo: draft.isVideo,
+          isVideo: false, // Composite is always an image
           referenceId: draft.referenceId,
           referenceName: draft.referenceName,
           referenceType: draft.referenceType,
@@ -567,6 +606,11 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> {
             backgroundColor: AppColors.error,
           ),
         );
+      }
+    } finally {
+      // Clean up temporary composite file
+      if (compositeFilePath != null) {
+        await cropService.cleanupTempFile(compositeFilePath);
       }
     }
   }
