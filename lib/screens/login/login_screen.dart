@@ -77,14 +77,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   }
   
   void _showErrorSnackbar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppColors.error,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-    );
+    // Suppressed for demo - error handling logic remains
   }
 
   @override

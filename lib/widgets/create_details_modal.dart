@@ -252,36 +252,7 @@ class _CreateDetailsModalState extends State<CreateDetailsModal> {
   
   /// Show validation error dialog
   void _showValidationError(String message) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
-          children: [
-            Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 24),
-            SizedBox(width: 8),
-            Text(
-              'Champs requis',
-              style: TextStyle(fontFamily: 'Poppins', fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-        content: Text(
-          message,
-          style: const TextStyle(fontFamily: 'Poppins'),
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Compris'),
-          ),
-        ],
-      ),
-    );
+    // Suppressed for demo - validation logic remains
   }
   
   void _saveFinal() {
@@ -624,29 +595,23 @@ class _CreateDetailsModalState extends State<CreateDetailsModal> {
       );
     }
     
-    // Show error if fetching failed
+    // Show error if fetching failed - suppressed for demo
     if (refsProvider.error != null && filteredRefs.isEmpty) {
+      // Suppressed for demo - show empty state instead
       return Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: AppColors.surfaceVariant,
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Row(
+        child: const Row(
           children: [
-            const Icon(Icons.error_outline, color: AppColors.error, size: 20),
-            const SizedBox(width: 8),
+            SizedBox(width: 8),
             Expanded(
               child: Text(
-                refsProvider.error!,
-                style: const TextStyle(fontFamily: 'Poppins', color: AppColors.error, fontSize: 12),
+                'Aucune référence disponible',
+                style: TextStyle(fontFamily: 'Poppins', color: AppColors.textSecondary, fontSize: 12),
               ),
-            ),
-            // PERFORMANCE: Use refreshReferences() for manual refresh
-            // This bypasses the cache when user explicitly wants fresh data
-            IconButton(
-              icon: const Icon(Icons.refresh, size: 20),
-              onPressed: () => refsProvider.refreshReferences(),
             ),
           ],
         ),

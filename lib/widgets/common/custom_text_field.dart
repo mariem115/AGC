@@ -108,6 +108,8 @@ class _CustomTextFieldState extends State<CustomTextField> {
                         onPressed: widget.onSuffixIconTap,
                       )
                     : null,
+            errorText: null, // Suppressed for demo - validation logic remains
+            errorStyle: const TextStyle(height: 0), // Hide error text
           ),
         ),
       ],

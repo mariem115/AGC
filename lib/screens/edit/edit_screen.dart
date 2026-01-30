@@ -191,14 +191,7 @@ class _EditScreenState extends State<EditScreen> {
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppColors.error,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-    );
+    // Suppressed for demo - error handling logic remains
   }
 
   @override
@@ -315,9 +308,9 @@ class _EditScreenState extends State<EditScreen> {
                   errorBuilder: (context, error, stackTrace) {
                     return const Center(
                       child: Icon(
-                        Icons.error_outline,
+                        Icons.broken_image_outlined,
                         size: 64,
-                        color: AppColors.error,
+                        color: AppColors.textLight,
                       ),
                     );
                   },

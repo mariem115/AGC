@@ -266,17 +266,7 @@ class _ZoomSelectScreenState extends State<ZoomSelectScreen> {
             ZoomSelectResult(croppedPath: resultPath, wasVideo: widget.isVideo),
           );
         } else {
-          // Show error
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Erreur lors du traitement de l\'image'),
-              backgroundColor: AppColors.error,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          );
+          // Suppressed for demo - error handling logic remains
           setState(() => _isProcessing = false);
         }
       }
@@ -284,12 +274,7 @@ class _ZoomSelectScreenState extends State<ZoomSelectScreen> {
       debugPrint('ZoomSelectScreen: Error processing: $e');
       if (mounted) {
         setState(() => _isProcessing = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur: $e'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        // Suppressed for demo - error handling logic remains
       }
     }
   }

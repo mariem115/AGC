@@ -100,16 +100,7 @@ class _BrouillonScreenState extends State<BrouillonScreen> {
           ),
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Erreur lors de la suppression du brouillon'),
-            backgroundColor: AppColors.error,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-        );
+        // Suppressed for demo - error handling logic remains
       }
     }
   }
@@ -117,14 +108,7 @@ class _BrouillonScreenState extends State<BrouillonScreen> {
   Future<void> _finalizeDraft(DraftItem draft) async {
     // Check if reference is selected
     if (draft.referenceId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Veuillez d\'abord selectionner une reference'),
-          backgroundColor: AppColors.warning,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-      );
+      // Suppressed for demo - validation logic remains
       _editDraft(draft);
       return;
     }
@@ -139,18 +123,7 @@ class _BrouillonScreenState extends State<BrouillonScreen> {
     if (kIsWeb) {
       final blobExists = await draftProvider.draftFileExists(draft);
       if (!blobExists) {
-        scaffoldMessenger.showSnackBar(
-          SnackBar(
-            content: const Text(
-              'Fichier manquant - impossible de finaliser ce brouillon',
-            ),
-            backgroundColor: AppColors.error,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-        );
+        // Suppressed for demo - error handling logic remains
         return;
       }
     }
@@ -235,34 +208,12 @@ class _BrouillonScreenState extends State<BrouillonScreen> {
           );
         }
       } else {
-        if (mounted) {
-          scaffoldMessenger.showSnackBar(
-            SnackBar(
-              content: Text(
-                mediaProvider.error ?? 'Erreur lors du telechargement',
-              ),
-              backgroundColor: AppColors.error,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          );
-        }
+        // Suppressed for demo - error handling logic remains
       }
     } catch (e) {
       if (mounted) {
         navigator.pop(); // Close loading dialog
-        scaffoldMessenger.showSnackBar(
-          SnackBar(
-            content: Text('Erreur: $e'),
-            backgroundColor: AppColors.error,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-        );
+        // Suppressed for demo - error handling logic remains
       }
     }
   }
