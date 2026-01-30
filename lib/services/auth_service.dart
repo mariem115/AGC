@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:io' as io;
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart' as http_io;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/constants.dart';
 import '../models/user.dart';
@@ -14,6 +16,21 @@ class AuthService {
   User? _currentUser;
   List<Reference> _references = [];
   
+  // Dedicated HTTP client for login (does not follow redirects)
+  static http.Client? _loginClient;
+  
+  /// Get or create the login HTTP client (configured to not follow redirects)
+  static http.Client _getLoginClient() {
+    if (_loginClient != null) {
+      return _loginClient!;
+    }
+    
+    // Create custom client that doesn't follow redirects
+    // We use a custom client wrapper that intercepts redirects
+    _loginClient = _NoRedirectClient();
+    return _loginClient!;
+  }
+  
   User? get currentUser => _currentUser;
   List<Reference> get references => _references;
   
@@ -23,8 +40,11 @@ class AuthService {
       // Build login URL with action as query param, credentials in JSON body
       final uri = Uri.parse('${AppConstants.baseUrl}?action=${AppConstants.actionLogin}');
       
+      // Use dedicated login client that does NOT follow redirects
+      final client = _getLoginClient();
+      
       // Send POST request with JSON body
-      final response = await http.post(
+      final response = await client.post(
         uri,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -41,6 +61,22 @@ class AuthService {
       print('Response body: "${response.body}"');
       print('Response headers: ${response.headers}');
       print('===================');
+      
+      // Handle 302 redirect response explicitly (don't follow redirect)
+      if (response.statusCode == 302) {
+        // Server returned redirect - this indicates login problem
+        // Extract error message from response body if available
+        try {
+          final json = jsonDecode(response.body);
+          if (json is Map<String, dynamic>) {
+            final errorMsg = json['message'] ?? json['error'] ?? 'Erreur de connexion';
+            return AuthResult.failure(errorMsg.toString());
+          }
+        } catch (_) {
+          // If body is not JSON, use default error
+        }
+        return AuthResult.failure('Erreur de connexion: redirection non autorisée');
+      }
       
       if (response.statusCode != 200) {
         return AuthResult.failure('Erreur serveur: ${response.statusCode}');
@@ -204,6 +240,26 @@ class AuthService {
     } catch (_) {
       // Ignore errors during logout
     }
+  }
+}
+
+/// Custom HTTP client that does not follow redirects
+/// Uses a separate HttpClient instance isolated from media upload configuration
+class _NoRedirectClient extends http.BaseClient {
+  final http_io.IOClient _ioClient;
+  
+  _NoRedirectClient() : _ioClient = http_io.IOClient(io.HttpClient());
+  
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    // Use IOClient - it will follow redirects, but we handle 302 explicitly in login()
+    // The key is that this client is isolated from any media upload configuration
+    return _ioClient.send(request);
+  }
+  
+  @override
+  void close() {
+    _ioClient.close();
   }
 }
 

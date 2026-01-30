@@ -457,14 +457,29 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> with SingleTicker
         if (_isUsingCroppedMedia && _workingMediaPath != null) {
           // Generate composite image with original + cropped detail + metadata
           debugPrint('Generating composite image...');
-          compositeFilePath = await cropService.generateCompositeImage(
-            originalPath: widget.imagePath,
-            croppedPath: _workingMediaPath!,
-            qualityStatus: draft.qualityStatus,
-            description: draft.description,
-            referenceName: draft.referenceName,
-            createdAt: draft.createdAt,
-          );
+          
+          if (widget.isVideo) {
+            // For videos: captured frame is an image, use it as both original and cropped
+            debugPrint('Video flow: Using captured frame as both original and cropped for composite');
+            compositeFilePath = await cropService.generateCompositeImage(
+              originalPath: _workingMediaPath!, // Use captured frame as "original"
+              croppedPath: _workingMediaPath!,   // Use captured frame as "cropped"
+              qualityStatus: draft.qualityStatus,
+              description: draft.description,
+              referenceName: draft.referenceName,
+              createdAt: draft.createdAt,
+            );
+          } else {
+            // For photos: existing logic
+            compositeFilePath = await cropService.generateCompositeImage(
+              originalPath: widget.imagePath,
+              croppedPath: _workingMediaPath!,
+              qualityStatus: draft.qualityStatus,
+              description: draft.description,
+              referenceName: draft.referenceName,
+              createdAt: draft.createdAt,
+            );
+          }
           
           if (compositeFilePath == null) {
             throw Exception('Échec de la génération de l\'image composite');
@@ -559,16 +574,20 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> with SingleTicker
       if (mounted) {
         setState(() => _isSaving = false);
         
-        // Navigate to detail created screen if composite was generated (cropped media)
-        if (_isUsingCroppedMedia && compositeFilePath != null) {
+        // Navigate to detail created screen if composite was generated OR if video with captured frame
+        if ((_isUsingCroppedMedia && compositeFilePath != null) || 
+            (widget.isVideo && _isUsingCroppedMedia && _workingMediaPath != null && compositeFilePath == null)) {
+          
+          String imagePathForDetail = compositeFilePath ?? _workingMediaPath!;
+          
           Navigator.pushReplacementNamed(
             context,
             AppRoutes.detailCreated,
             arguments: {
-              'compositeImagePath': compositeFilePath,
+              'compositeImagePath': imagePathForDetail,
               'qualityStatus': draft.qualityStatus,
               'cropRect': _cropRectInImageCoords,
-              'originalImagePath': widget.imagePath,
+              'originalImagePath': widget.isVideo ? _workingMediaPath! : widget.imagePath,
               'isUsingCroppedMedia': true,
             },
           );
@@ -1410,6 +1429,16 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> with SingleTicker
           _mediaKey,
           cropRect: cropRect,
         );
+        
+        // Store crop rect for arrow drawing
+        // For videos, the captured frame becomes the "original" for composite,
+        // so we store the display crop rect which will be used relative to the captured frame
+        if (croppedPath != null) {
+          // Store display crop rect - will be converted to frame coordinates when needed
+          // Since captured frame is used as both original and cropped, the rect represents
+          // the full frame area (no actual crop in the composite, but stored for consistency)
+          _cropRectInImageCoords = cropRect;
+        }
       } else {
         // For images: crop directly using image path
         final cropRect = _calculateCropRectForImage();

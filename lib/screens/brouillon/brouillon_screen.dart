@@ -4,11 +4,13 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:path/path.dart' as p;
 import '../../config/routes.dart';
 import '../../config/theme.dart';
 import '../../models/draft_item.dart';
 import '../../providers/draft_provider.dart';
 import '../../providers/media_provider.dart';
+import '../../services/media_service.dart';
 
 /// Brouillon (Drafts) list screen
 class BrouillonScreen extends StatefulWidget {
@@ -172,15 +174,41 @@ class _BrouillonScreenState extends State<BrouillonScreen> {
       } else {
         // On mobile, use file directly
         final file = File(draft.filePath);
+        
+        if (!await file.exists()) {
+          throw Exception('Fichier introuvable: ${draft.filePath}');
+        }
 
-        success = await mediaProvider.uploadImage(
+        // Use MediaService for proper upload handling
+        // For video drafts: if file is an image (captured frame), upload as image
+        // Otherwise upload as video
+        final mediaService = MediaService();
+        final ext = p.extension(file.path).toLowerCase();
+        final isVideoFile = ext == '.mp4' || ext == '.mov' || ext == '.avi' || 
+                           ext == '.mkv' || ext == '.webm' || ext == '.3gp';
+        
+        // Determine if we should upload as video or image
+        // Video drafts with captured frames will have image files
+        final uploadAsVideo = draft.isVideo && isVideoFile;
+        
+        final fileName = '${draft.referenceName ?? 'Media'}_${DateTime.now().millisecondsSinceEpoch}${ext.isNotEmpty ? ext : (uploadAsVideo ? '.mp4' : '.png')}';
+        
+        final uploadResult = await mediaService.uploadMedia(
           file: file,
           referenceId: draft.referenceId!,
           referenceType: draft.referenceType ?? 0,
           mediaType: draft.qualityStatus,
-          imageName:
-              '${draft.referenceName ?? 'Media'}_${DateTime.now().millisecondsSinceEpoch}.${draft.isVideo ? 'mp4' : 'png'}',
+          fileName: fileName,
+          isVideo: uploadAsVideo,
         );
+        
+        success = uploadResult.isSuccess;
+        
+        if (success) {
+          debugPrint('BrouillonScreen: Upload success! Media ID: ${uploadResult.imageId}');
+        } else {
+          debugPrint('BrouillonScreen: Upload failed: ${uploadResult.error}');
+        }
       }
 
       if (mounted) {
