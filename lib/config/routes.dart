@@ -8,6 +8,7 @@ import '../screens/gallery/gallery_screen.dart';
 import '../screens/gallery/server_gallery_screen.dart';
 import '../screens/settings/settings_screen.dart';
 import '../screens/review/photo_review_screen.dart';
+import '../screens/review/detail_created_screen.dart';
 import '../screens/brouillon/brouillon_screen.dart';
 
 /// Route names
@@ -22,6 +23,7 @@ class AppRoutes {
   static const String serverGallery = '/server-gallery';
   static const String settings = '/settings';
   static const String photoReview = '/photo-review';
+  static const String detailCreated = '/detail-created';
   static const String brouillon = '/brouillon';
 }
 
@@ -80,6 +82,19 @@ class AppRouter {
             imagePath: args['imagePath'],
             isVideo: args['isVideo'] ?? false,
             draftId: args['draftId'],
+          ),
+          settings,
+        );
+      
+      case AppRoutes.detailCreated:
+        final args = settings.arguments as Map<String, dynamic>;
+        return _buildRoute(
+          DetailCreatedScreen(
+            compositeImagePath: args['compositeImagePath'],
+            qualityStatus: args['qualityStatus'],
+            cropRect: args['cropRect'],
+            originalImagePath: args['originalImagePath'],
+            isUsingCroppedMedia: args['isUsingCroppedMedia'] ?? false,
           ),
           settings,
         );

@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 import '../../config/theme.dart';
+import '../../config/routes.dart';
 import '../../models/draft_item.dart';
 import '../../providers/draft_provider.dart';
 import '../../providers/media_provider.dart';
@@ -63,6 +64,9 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> with SingleTicker
   
   /// Whether capture is in progress
   bool _isCapturing = false;
+  
+  /// Crop rect in original image coordinates (for arrow drawing in result page)
+  Rect? _cropRectInImageCoords;
   
   // === Animation for smooth reset ===
   late AnimationController _resetAnimationController;
@@ -554,25 +558,47 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> with SingleTicker
 
       if (mounted) {
         setState(() => _isSaving = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Média sauvegardé avec succès'),
-            backgroundColor: AppColors.success,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
+        
+        // Navigate to detail created screen if composite was generated (cropped media)
+        if (_isUsingCroppedMedia && compositeFilePath != null) {
+          Navigator.pushReplacementNamed(
+            context,
+            AppRoutes.detailCreated,
+            arguments: {
+              'compositeImagePath': compositeFilePath,
+              'qualityStatus': draft.qualityStatus,
+              'cropRect': _cropRectInImageCoords,
+              'originalImagePath': widget.imagePath,
+              'isUsingCroppedMedia': true,
+            },
+          );
+          // Don't clean up composite file here - it will be cleaned up when leaving the detail screen
+        } else {
+          // Existing behavior: show snackbar and pop (no composite, no new screen)
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Média sauvegardé avec succès'),
+              backgroundColor: AppColors.success,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
-          ),
-        );
-        Navigator.pop(context); // Go back
+          );
+          Navigator.pop(context); // Go back
+          
+          // Clean up temporary composite file if it exists (shouldn't happen in this branch)
+          if (compositeFilePath != null) {
+            await cropService.cleanupTempFile(compositeFilePath);
+          }
+        }
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isSaving = false);
         // Suppressed for demo - error handling logic remains
       }
-    } finally {
-      // Clean up temporary composite file
+      // Clean up on error
       if (compositeFilePath != null) {
         await cropService.cleanupTempFile(compositeFilePath);
       }
@@ -1389,6 +1415,8 @@ class _PhotoReviewScreenState extends State<PhotoReviewScreen> with SingleTicker
         final cropRect = _calculateCropRectForImage();
         
         if (cropRect != null) {
+          // Store crop rect in original image coordinates for arrow drawing
+          _cropRectInImageCoords = cropRect;
           croppedPath = await cropService.cropImageManual(widget.imagePath, cropRect);
         }
       }
